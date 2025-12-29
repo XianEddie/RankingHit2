@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>角色經驗值排行榜</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      padding: 20px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background: white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: center;
+    }
+    th {
+      background-color: #4CAF50;
+      color: white;
+    }
+    tr:nth-child(even) {
+      background-color: #f2f2f2;
+    }
+    tr:hover {
+      background-color: #ddd;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <h2>角色經驗值排行榜</h2>
+  <table v-if="sortedData.length > 0">
+    <thead>
+      <tr>
+        <th>排名</th>
+        <th>角色名稱</th>
+        <th>等級</th>
+        <th>經驗值</th>
+        <th>公會</th>
+        <th>世界</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr v-for="(item, index) in sortedData" :key="item.gcid">
+        <td>{{ index+1 }}</td>
+        <td>{{ item.gc_name }}</td>
+        <td>{{ item.gc_level }}</td>
+        <td>{{ item.gc_exp.toLocaleString() }}</td>
+        <td>{{ item.guild_name }}</td>
+        <td>{{ translateWorld(item.world_id) }}</td>
+      </tr>
+    </tbody>
+  </table>
+  <p v-else>載入中...</p>
+</div>
+
+<script>
+const { createApp } = Vue;
+
+createApp({
+  data() {
+    return {
+      jsonList: [],
+      // 世界韓中對照表
+      worldMap: {
+        "키키": "奇奇",
+        "레나": "莉娜",
+        "아니카": "阿妮卡",
+        "루카스": "盧卡斯",
+        "휴고": "雨果",
+        "아델": "阿戴爾",
+        "에다": "艾達",
+        "비르바": "維勒巴"
+      }
+    };
+  },
+  computed: {
+    sortedData() {
+      return [...this.jsonList].sort((a, b) => b.gc_exp - a.gc_exp);
+    }
+  },
+  methods: {
+    async loadAPI() {
+      let allData = [];
+      // 從 WorldGroupID = 0 到 8 依序抓
+      for (let i = 0; i <= 8; i++) {
+        const apiURL = `https://hit2-api.nexon.com/api/Game/GetWorldRankDate_List?strWorldGroupID=${i}&n4PageNo=1&n2PageSize=100&timestamp=${Date.now()}`;
+        try {
+          const res = await fetch(apiURL);
+          const json = await res.json();
+          if (json.ResultData) {
+            allData = allData.concat(json.ResultData);
+          }
+          console.log(`已抓取 WorldGroupID=${i}, 共 ${json.ResultData?.length || 0} 筆資料`);
+        } catch (err) {
+          console.error(`抓取 WorldGroupID=${i} 失敗:`, err);
+        }
+      }
+      this.jsonList = allData;
+    },
+    translateWorld(worldStr) {
+      for (const key in this.worldMap) {
+        if (worldStr.startsWith(key)) {
+          return worldStr.replace(key, this.worldMap[key]);
+        }
+      }
+      return worldStr;
+    }
+  },
+  mounted() {
+    this.loadAPI();
+  }
+}).mount("#app");
+</script>
+</body>
+</html>
