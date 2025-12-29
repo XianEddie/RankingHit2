@@ -2,15 +2,23 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>角色排行榜 + 伺服器戰力排名 + 等級分布總表</title>
+<title>角色排行榜 + 伺服器戰力 + 等級分布矩陣</title>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <style>
   body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
-  table { border-collapse: collapse; background: white; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
-  th, td { border: 1px solid #ddd; padding: 5px; text-align: center; }
+  table { border-collapse: collapse; background: white; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 20px; min-width: 600px; }
+  th, td { border: 1px solid #ddd; padding: 6px; text-align: center; font-size: 14px; }
   th { background-color: #4CAF50; color: white; position: sticky; top: 0; }
   tr:nth-child(even) { background-color: #f9f9f9; }
   .scroll-table { overflow-x: auto; }
+  .heatmap {
+    background-color: #f0f0f0;
+  }
+  @media (max-width: 768px) {
+    body { padding: 10px; }
+    th, td { font-size: 12px; padding: 4px; }
+    table { min-width: 500px; }
+  }
 </style>
 </head>
 <body>
@@ -57,21 +65,21 @@
     </tbody>
   </table>
 
-  <!-- 各伺服器 x 等級 人數總表 -->
-  <h2>伺服器與等級分布總表</h2>
+  <!-- 等級 × 伺服器 分布矩陣表 -->
+  <h2>等級 × 伺服器 人數分布</h2>
   <div class="scroll-table">
-    <table v-if="levelTable.length">
+    <table v-if="levelMatrix.length">
       <thead>
         <tr>
-          <th>伺服器 \ 等級</th>
-          <th v-for="lvl in allLevels" :key="'head_' + lvl">{{ lvl }}</th>
+          <th>等級 \ 伺服器</th>
+          <th v-for="srv in serverNames" :key="'srv_' + srv">{{ srv }}</th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="srv in levelTable" :key="srv.server">
-          <th>{{ srv.server }}</th>
-          <td v-for="lvl in allLevels" :key="srv.server + '_' + lvl">
-            {{ srv.levelCount[lvl] || 0 }}
+        <tr v-for="lvl in allLevels" :key="'lvl_' + lvl">
+          <th>Lv{{ lvl }}</th>
+          <td v-for="srv in serverNames" :key="srv + '_' + lvl" :style="heatStyle(levelCounts[srv]?.[lvl] || 0)">
+            {{ levelCounts[srv]?.[lvl] || 0 }}
           </td>
         </tr>
       </tbody>
@@ -88,8 +96,10 @@ createApp({
     return {
       jsonList: [],
       serverStats: [],
-      levelTable: [],
+      serverNames: [],
+      levelCounts: {},
       allLevels: [],
+      maxCount: 0,
       worldMap: {
         "키키": "奇奇",
         "레나": "莉娜",
@@ -105,6 +115,15 @@ createApp({
   computed: {
     sortedData() {
       return [...this.jsonList].sort((a, b) => b.gc_exp - a.gc_exp);
+    },
+    levelMatrix() {
+      return this.allLevels.map(lvl => {
+        const row = { level: lvl };
+        this.serverNames.forEach(srv => {
+          row[srv] = this.levelCounts[srv]?.[lvl] || 0;
+        });
+        return row;
+      });
     }
   },
   methods: {
@@ -124,7 +143,7 @@ createApp({
       }
       this.jsonList = allData;
       this.calcServerStats();
-      this.calcLevelTable();
+      this.calcLevelMatrix();
     },
     translateWorld(worldStr) {
       for (const key in this.worldMap) {
@@ -151,31 +170,38 @@ createApp({
           count: stats[name].count
         }))
         .sort((a, b) => b.totalExp - a.totalExp);
+      this.serverNames = this.serverStats.map(s => s.name);
     },
-    calcLevelTable() {
-      const levelsSet = new Set();
-      const serverLevelCounts = {};
+    calcLevelMatrix() {
+      const lvlSet = new Set();
+      const lvlCounts = {};
 
       this.jsonList.forEach(item => {
-        const server = this.translateWorld(item.world_id);
+        const srv = this.translateWorld(item.world_id);
         const lvl = item.gc_level;
-        levelsSet.add(lvl);
+        lvlSet.add(lvl);
 
-        if (!serverLevelCounts[server]) {
-          serverLevelCounts[server] = {};
+        if (!lvlCounts[srv]) {
+          lvlCounts[srv] = {};
         }
-        if (!serverLevelCounts[server][lvl]) {
-          serverLevelCounts[server][lvl] = 0;
+        if (!lvlCounts[srv][lvl]) {
+          lvlCounts[srv][lvl] = 0;
         }
-        serverLevelCounts[server][lvl] += 1;
+        lvlCounts[srv][lvl] += 1;
+
+        if (lvlCounts[srv][lvl] > this.maxCount) {
+          this.maxCount = lvlCounts[srv][lvl];
+        }
       });
 
-      this.allLevels = Array.from(levelsSet).sort((a, b) => a - b);
-
-      this.levelTable = Object.keys(serverLevelCounts).sort().map(server => ({
-        server,
-        levelCount: serverLevelCounts[server]
-      }));
+      this.allLevels = Array.from(lvlSet).sort((a, b) => a - b);
+      this.levelCounts = lvlCounts;
+    },
+    heatStyle(count) {
+      if (count === 0) return {};
+      const intensity = count / this.maxCount;
+      const colorVal = Math.floor(255 - intensity * 150); 
+      return { backgroundColor: `rgb(${colorVal}, ${255-colorVal/2}, ${colorVal})` };
     }
   },
   mounted() {
