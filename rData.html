@@ -6,66 +6,74 @@
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <style>
   body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
-  table { border-collapse: collapse; background: white; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 20px; min-width: 600px; }
+  table { border-collapse: collapse; background: white; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 20px; min-width: 300px; }
   th, td { border: 1px solid #ddd; padding: 6px; text-align: center; font-size: 14px; }
   th { background-color: #4CAF50; color: white; position: sticky; top: 0; }
   tr:nth-child(even) { background-color: #f9f9f9; }
   .scroll-table { overflow-x: auto; }
-  .heatmap {
-    background-color: #f0f0f0;
-  }
+  .heatmap { background-color: #f0f0f0; }
+  .top-grid { display: flex; flex-wrap: wrap; gap: 20px; }
+  .grid-item { flex: 1; min-width: 300px; background: #fff; padding: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
   @media (max-width: 768px) {
     body { padding: 10px; }
     th, td { font-size: 12px; padding: 4px; }
-    table { min-width: 500px; }
+    .grid-item { min-width: 100%; }
+    table { min-width: unset; }
   }
 </style>
 </head>
 <body>
 <div id="app">
-  
-  <!-- 個人排行榜 -->
-  <h2>角色經驗值排行榜</h2>
-  <table v-if="sortedData.length">
-    <thead>
-      <tr>
-        <th>排名</th>
-        <th>角色名稱</th>
-        <th>等級</th>
-        <th>經驗值</th>
-        <th>公會</th>
-        <th>世界</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr v-for="(item, index) in sortedData" :key="item.gcid">
-        <td>{{ index+1 }}</td>
-        <td>{{ item.gc_name }}</td>
-        <td>{{ item.gc_level }}</td>
-        <td>{{ item.gc_exp.toLocaleString() }}</td>
-        <td>{{ item.guild_name }}</td>
-        <td>{{ translateWorld(item.world_id) }}</td>
-      </tr>
-    </tbody>
-  </table>
 
-  <!-- 伺服器戰力總表 -->
-  <h2>伺服器戰力排名（總體EXP）</h2>
-  <table v-if="serverStats.length">
-    <thead>
-      <tr><th>排名</th><th>伺服器</th><th>總戰力 EXP</th><th>玩家數</th></tr>
-    </thead>
-    <tbody>
-      <tr v-for="(srv, index) in serverStats" :key="srv.name">
-        <td>{{ index + 1 }}</td>
-        <td>{{ srv.name }}</td>
-        <td>{{ srv.totalExp.toLocaleString() }}</td>
-        <td>{{ srv.count }}</td>
-      </tr>
-    </tbody>
-  </table>
+  <!-- 上方左右兩表 -->
+  <div class="top-grid">
+    <!-- 左：角色排行榜 -->
+    <div class="grid-item">
+      <h2>角色經驗值排行榜</h2>
+      <table v-if="sortedData.length">
+        <thead>
+          <tr>
+            <th>排名</th>
+            <th>角色名稱</th>
+            <th>等級</th>
+            <th>經驗值</th>
+            <th>公會</th>
+            <th>世界</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(item, index) in sortedData" :key="item.gcid">
+            <td>{{ index+1 }}</td>
+            <td>{{ item.gc_name }}</td>
+            <td>{{ item.gc_level }}</td>
+            <td>{{ item.gc_exp.toLocaleString() }}</td>
+            <td>{{ item.guild_name }}</td>
+            <td>{{ translateWorld(item.world_id) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-  <!-- 等級 × 伺服器 分布矩陣表 -->
+    <!-- 右：伺服器戰力總表 -->
+    <div class="grid-item">
+      <h2>伺服器戰力排名（總體EXP）</h2>
+      <table v-if="serverStats.length">
+        <thead>
+          <tr><th>排名</th><th>伺服器</th><th>總戰力 EXP</th><th>玩家數</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(srv, index) in serverStats" :key="srv.name">
+            <td>{{ index + 1 }}</td>
+            <td>{{ srv.name }}</td>
+            <td>{{ srv.totalExp.toLocaleString() }}</td>
+            <td>{{ srv.count }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 底部：等級 × 伺服器 分布矩陣 -->
   <h2>等級 × 伺服器 人數分布</h2>
   <div class="scroll-table">
     <table v-if="levelMatrix.length">
@@ -90,7 +98,6 @@
 
 <script>
 const { createApp } = Vue;
-
 createApp({
   data() {
     return {
