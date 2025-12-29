@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<title>聯賽分組模擬器 — RankingHit2 分組分析</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: Arial, Helvetica, "Microsoft JhengHei", sans-serif; background:#f6f7fb; margin:16px; color:#222; }
+  .app { display:flex; gap:16px; flex-wrap:wrap; }
+  .col-left { flex:1 1 720px; min-width:360px; }
+  .col-right { width:420px; min-width:320px; }
+  .card { background:#fff; border-radius:6px; padding:10px; box-shadow:0 6px 18px rgba(25,25,40,0.06); margin-bottom:16px; }
+  h2,h3 { margin:6px 0 10px 0; font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { padding:6px 8px; border:1px solid #e8ecf1; text-align:center; }
+  th { background:#0f6; background:linear-gradient(90deg,#2b7a78,#0f9d8e); color:#fff; font-weight:600; position:sticky; top:0; }
+  .controls { display:flex; flex-direction:column; gap:8px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  label { font-size:13px; }
+  input[type="number"], select { padding:6px; font-size:13px; border:1px solid #cfd8e3; border-radius:4px; }
+  button { padding:8px 10px; border:none; background:#2774ff; color:#fff; border-radius:6px; cursor:pointer; }
+  .league-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
+  .league { border:1px dashed #d7e2ee; padding:8px; min-height:170px; border-radius:6px; background:linear-gradient(180deg,#fff,#fbfdff); }
+  .league h4 { margin:0 0 6px 0; font-size:14px; }
+  .srv { padding:4px 6px; border-radius:4px; margin:4px 0; background:#f3f7fb; display:flex; justify-content:space-between; font-size:13px; }
+  .small { font-size:12px; color:#666; }
+  .chart-wrap { height:220px; }
+  .heat { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; vertical-align:middle; }
+  .muted { color:#666; font-size:13px; }
+  @media (max-width:920px){ .col-right{width:100%} .col-left{min-width:unset} .league-grid{grid-template-columns:repeat(2,1fr);} }
+</style>
+</head>
+<body>
+<div id="app" class="app">
+  <div class="col-left">
+
+    <!-- 新增：說明卡片（加權與指標意義） -->
+    <div class="card">
+      <h2>使用說明與各加權意義</h2>
+      <div style="font-size:13px;line-height:1.5;">
+        <div><strong>目的：</strong>模擬官方將伺服器分成 5 個聯賽、每聯賽 8 組的分組機制，透過不同指標（總戰力、Top N、平均、玩家數、高等級加權）推測分群依據。</div>
+        <ul style="margin:8px 0 0 18px;padding:0;">
+          <li><strong>totalExp（總戰力）</strong>：伺服器所有玩家 EXP 的合計，代表整體實力與資源量，對大規模戰力影響最大。</li>
+          <li><strong>topNExp（前 N 名總和）</strong>：用來衡量高端玩家密度。若分組偏重 PvP / 公會戰，TopN 比重會提高。</li>
+          <li><strong>avgExp（人均 EXP）</strong>：反映玩家平均實力，能避免單純以人數誤判大服優勢。</li>
+          <li><strong>count（玩家數）</strong>：伺服器規模指標，可作為權重修正或最小分組門檻。</li>
+          <li><strong>高等級加權（highLevelWeight, threshold）</strong>：假設官方在分組時會額外給予高等級玩家（例如 Lv≥100）更高權重，透過調整此參數可模擬「高階玩家影響力」。</li>
+        </ul>
+        <div style="margin-top:8px;">
+          <strong>使用建議：</strong>預設使用 Composite（可調整權重），若要模擬官方偏重高等級則提高 highLevelWeight 或增大 topNExp 權重；若偏重規模則提高 totalExp / count 權重。可切換分組方式（block 或 snake）觀察不同分布效果。
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>資料與指標（伺服器）</h2>
+      <div class="row" style="gap:12px;">
+        <div class="controls" style="flex:1">
+          <div class="row">
+            <label>Top N 用於 topExp: </label>
+            <input type="number" v-model.number="topN" min="1" style="width:80px"/>
+            <label>高等級門檻 Lv≥</label>
+            <input type="number" v-model.number="highLevelThreshold" min="1" style="width:80px"/>
+            <label>高等級加乘</label>
+            <input type="number" v-model.number="highLevelWeight" step="0.1" style="width:80px"/>
+          </div>
+          <div class="row">
+            <label>分數依據</label>
+            <select v-model="metricMode" style="width:220px">
+              <option value="composite">Composite（可加權）</option>
+              <option value="totalExp">總戰力 totalExp</option>
+              <option value="topNExp">Top N 合計</option>
+              <option value="avgExp">人均 avgExp</option>
+            </select>
+            <label>分組方式</label>
+            <select v-model="groupMethod" style="width:180px">
+              <option value="block">分段（1-8→聯賽1, 9-16→聯賽2...）</option>
+              <option value="snake">蛇形 / 輪排（round-robin）</option>
+            </select>
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button @click="recalcAndGroup">重新計算並分組</button>
+            <button @click="resetWeights" style="background:#444">重置權重</button>
+            <div class="muted">伺服器數：{{serverList.length}}</div>
+          </div>
+        </div>
+        <div style="width:260px;">
+          <div style="font-size:13px;margin-bottom:6px;">Composite 權重（總和建議 = 1.0）</div>
+          <div class="row">
+            <label style="width:70px">totalExp</label>
+            <input type="number" v-model.number="weights.totalExp" step="0.05" style="width:90px"/>
+          </div>
+          <div class="row">
+            <label style="width:70px">topNExp</label>
+            <input type="number" v-model.number="weights.topNExp" step="0.05" style="width:90px"/>
+          </div>
+          <div class="row">
+            <label style="width:70px">avgExp</label>
+            <input type="number" v-model.number="weights.avgExp" step="0.05" style="width:90px"/>
+          </div>
+          <div class="row">
+            <label style="width:70px">count</label>
+            <input type="number" v-model.number="weights.count" step="0.01" style="width:90px"/>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 新增：把分組模擬卡片移到左側 -->
+    <div class="card">
+      <h3>分組模擬：5 聯賽 × 8 組</h3>
+      <div class="league-grid">
+        <div class="league" v-for="(league, li) in leagues" :key="'L'+(li+1)">
+          <h4>聯賽 {{li+1}} <span class="small">（{{league.length}} 伺服器）</span></h4>
+          <div v-if="league.length===0" class="small muted">尚未分組或該聯賽無伺服器</div>
+          <div v-for="srv in league" :key="srv.name" class="srv">
+            <div style="text-align:left;">
+              <strong>{{srv.name}}</strong>
+              <div class="small">Lv≥{{highLevelThreshold}}: {{srv.highLevelCount}}</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="small">{{(displayMetricValue(srv)).toLocaleString()}}</div>
+              <div class="small" style="margin-top:6px">#{{srv.rank}}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:10px;" class="muted">說明：排列方式可選「分段（block）」或「蛇形（snake）」。Composite 可加入高等級加權，右側列表展示伺服器指標與排序。</div>
+    </div>
+    
+    <div class="card">
+      <h3>伺服器指標表（可排序）</h3>
+      <div class="row" style="gap:12px;margin-bottom:8px;">
+        <label>排序依據</label>
+        <select v-model="sortBy" style="width:200px">
+          <option value="score">Composite Score</option>
+          <option value="totalExp">總戰力</option>
+          <option value="topNExp">TopN</option>
+          <option value="avgExp">人均</option>
+          <option value="count">玩家數</option>
+        </select>
+      </div>
+      <div style="max-height:320px;overflow:auto;">
+        <table>
+          <thead>
+            <tr><th>排名</th><th>伺服器</th><th>分數</th><th>總EXP</th><th>Top{{topN}}</th><th>人均</th><th>高等級人數</th><th>人數</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="(s,idx) in sortedServers" :key="s.name">
+              <td>{{idx+1}}</td>
+              <td style="text-align:left;padding-left:8px">{{s.name}}</td>
+              <td>{{(s.score||0).toFixed(4)}}</td>
+              <td>{{s.totalExp.toLocaleString()}}</td>
+              <td>{{s.topNExp.toLocaleString()}}</td>
+              <td>{{Math.round(s.avgExp).toLocaleString()}}</td>
+              <td>{{s.highLevelCount}}</td>
+              <td>{{s.count}}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>等級 × 伺服器 分布（熱力）</h3>
+      <div style="max-height:320px;overflow:auto;">
+        <table>
+          <thead>
+            <tr><th>Lv \ 伺服器</th><th v-for="s in serverNames" :key="'hd_'+s">{{s}}</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="lvl in allLevels" :key="lvl">
+              <th>Lv{{lvl}}</th>
+              <td v-for="s in serverNames" :key="s+'_'+lvl" :style="heatStyle(levelCounts[s]?.[lvl]||0)">{{levelCounts[s]?.[lvl]||0}}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-right">
+    <!-- 已移除左側的分組模擬卡片，右側僅保留視覺化與原始清單 -->
+    <div class="card">
+      <h3>總戰力（Exp）</h3>
+      <div class="chart-wrap"><canvas id="barChart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h3>伺服器清單 總EXP排序</h3>
+      <div style="max-height:100%;overflow:auto;">
+        <table>
+          <thead><tr><th>伺服器</th><th>玩家數</th><th>總EXP</th></tr></thead>
+          <tbody>
+            <tr v-for="s in serverList" :key="s.name">
+              <td>{{s.name}}</td>
+              <td>{{s.count}}</td>
+              <td>{{s.totalExp.toLocaleString()}}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const { createApp } = Vue;
+
+createApp({
+  data() {
+    return {
+      jsonList: [],
+      serverPlayers: {}, // srv -> [{exp, level}, ...]
+      serverList: [], // array of server metric objects
+      serverNames: [],
+      levelCounts: {},
+      allLevels: [],
+      maxLevelCount: 1,
+      topN: 5,
+      highLevelThreshold: 100,
+      highLevelWeight: 1.5,
+      weights: { totalExp: 0.5, topNExp: 0.45, avgExp: 0.0, count: 0.05 },
+      metricMode: 'composite',
+      groupMethod: 'block',
+      leagues: [[],[],[],[],[]],
+      sortBy: 'score',
+      chart: null,
+      worldMap: {
+        "키키": "奇奇",
+        "레나": "莉娜",
+        "아니카": "阿妮卡",
+        "루카스": "盧卡斯",
+        "휴고": "雨果",
+        "아델": "阿戴爾",
+        "에다": "艾達",
+        "비르바": "維勒巴"
+      }
+    };
+  },
+  computed: {
+    sortedServers() {
+      return [...this.serverList].sort((a,b) => {
+        const key = this.sortBy;
+        const av = (x) => x[key] !== undefined ? x[key] : 0;
+        return (av(b) - av(a)) || (a.name.localeCompare(b.name));
+      });
+    },
+    serverCount() { return this.serverList.length; }
+  },
+  methods: {
+    // load same JSON sources as before
+    async loadJSONFiles() {
+      let allData = [];
+      for (let i = 1; i <= 8; i++) {
+        const url = `https://xianeddie.github.io/RankingHit2/d${i}.json`;
+        try {
+          const res = await fetch(url);
+          const json = await res.json();
+          if (json.ResultData) allData = allData.concat(json.ResultData);
+        } catch (e) {
+          console.warn('載入 d'+i+'.json 失敗', e);
+        }
+      }
+      this.jsonList = allData;
+      this.buildServerPlayers();
+      this.recalcAndGroup();
+    },
+    translateWorld(s) {
+      for (const k in this.worldMap) if (s.startsWith(k)) return s.replace(k, this.worldMap[k]);
+      return s;
+    },
+    buildServerPlayers() {
+      this.serverPlayers = {};
+      this.levelCounts = {};
+      const lvlSet = new Set();
+      this.maxLevelCount = 1;
+
+      this.jsonList.forEach(p => {
+        const srv = this.translateWorld(p.world_id);
+        if (!this.serverPlayers[srv]) this.serverPlayers[srv] = [];
+        this.serverPlayers[srv].push({ exp: p.gc_exp, level: p.gc_level });
+
+        // level matrix counts
+        if (!this.levelCounts[srv]) this.levelCounts[srv] = {};
+        this.levelCounts[srv][p.gc_level] = (this.levelCounts[srv][p.gc_level]||0) + 1;
+        lvlSet.add(p.gc_level);
+        if (this.levelCounts[srv][p.gc_level] > this.maxLevelCount) this.maxLevelCount = this.levelCounts[srv][p.gc_level];
+      });
+
+      this.allLevels = Array.from(lvlSet).sort((a,b)=>a-b);
+      this.serverNames = Object.keys(this.serverPlayers).sort();
+    },
+    computeServerMetrics() {
+      const arr = [];
+      for (const srv of this.serverNames) {
+        const players = this.serverPlayers[srv] || [];
+        const count = players.length;
+        const totalExp = players.reduce((s,p)=>s+p.exp,0);
+        const avgExp = count ? totalExp/count : 0;
+        const sortedExp = players.map(p=>p.exp).sort((a,b)=>b-a);
+        const topNExp = sortedExp.slice(0,this.topN).reduce((s,v)=>s+v,0);
+        const highLevelCount = players.filter(p=>p.level >= this.highLevelThreshold).length;
+        const highLevelExp = players.filter(p=>p.level >= this.highLevelThreshold).reduce((s,p)=>s+p.exp,0);
+
+        // adjusted total: apply high-level weight to high level players' exp (hypothesis)
+        const adjustedTotal = totalExp - highLevelExp + highLevelExp * this.highLevelWeight;
+
+        arr.push({
+          name: srv,
+          totalExp,
+          adjustedTotal,
+          avgExp,
+          topNExp,
+          count,
+          highLevelCount
+        });
+      }
+
+      // normalization bases
+      const maxTotal = Math.max(...arr.map(x=>x.adjustedTotal),1);
+      const maxTop = Math.max(...arr.map(x=>x.topNExp),1);
+      const maxAvg = Math.max(...arr.map(x=>x.avgExp),1);
+      const maxCount = Math.max(...arr.map(x=>x.count),1);
+
+      // composite score
+      arr.forEach(a=>{
+        const nTotal = a.adjustedTotal / maxTotal;
+        const nTop = a.topNExp / maxTop;
+        const nAvg = a.avgExp / maxAvg;
+        const nCnt = a.count / maxCount;
+        const w = this.weights;
+        a.score = +(nTotal * w.totalExp + nTop * w.topNExp + nAvg * w.avgExp + nCnt * w.count).toFixed(6);
+
+        // store a metric for easy display and ranking
+        a.rankMetric = this.metricMode === 'composite' ? a.score
+                        : (this.metricMode === 'totalExp' ? a.totalExp
+                        : (this.metricMode === 'topNExp' ? a.topNExp
+                        : (this.metricMode === 'avgExp' ? a.avgExp : a.count)));
+      });
+
+      // final serverList with rank numbers
+      this.serverList = arr
+        .sort((a,b)=> (b.rankMetric - a.rankMetric) || a.name.localeCompare(b.name))
+        .map((s, idx) => ({...s, rank: idx+1}));
+
+      // update names
+      this.serverNames = this.serverList.map(s=>s.name);
+    },
+    recalcAndGroup() {
+      this.computeServerMetrics();
+      // choose ranking source for grouping
+      const ranked = [...this.serverList].sort((a,b)=> b.rankMetric - a.rankMetric);
+      // grouping into 5 leagues * 8 groups each (we assume up to 40 servers)
+      const leagues = [[],[],[],[],[]];
+      if (this.groupMethod === 'block') {
+        // blocks of 8: ranks 1-8 -> L1, 9-16 -> L2, ...
+        ranked.forEach((s, idx) => {
+          const leagueIdx = Math.floor(idx / 8);
+          if (leagueIdx < 5) leagues[leagueIdx].push(s);
+        });
+      } else {
+        // snake / round-robin: distribute in rounds to keep top spread
+        for (let i=0;i<ranked.length;i++){
+          const roundPos = i % 8; // group index inside round
+          const roundNo = Math.floor(i/8);
+          // in snake, alternate direction per round to mimic common tournament serpentine
+          const dir = (roundNo % 2 === 0) ? 1 : -1;
+          let col = roundPos;
+          if (dir === -1) col = 7 - roundPos;
+          // col is 0..7 but we need to map to league index 0..4 depending on grouping style:
+          // we'll use: for each round, distribute top8 across 5 leagues by placing in league index = roundPos % 5,
+          // but to keep simple: do round-robin into 5 leagues directly:
+          const leagueIdx = i % 5;
+          leagues[leagueIdx].push(ranked[i]);
+        }
+      }
+
+      // ensure leagues array has 5 entries
+      for (let i=0;i<5;i++) {
+        if (!leagues[i]) leagues[i]=[];
+      }
+      this.leagues = leagues;
+      this.drawBarChart();
+    },
+    displayMetricValue(srv) {
+      if (this.metricMode === 'composite') return Math.round((srv.score||0)*10000)/10000;
+      if (this.metricMode === 'totalExp') return srv.totalExp;
+      if (this.metricMode === 'topNExp') return srv.topNExp;
+      if (this.metricMode === 'avgExp') return Math.round(srv.avgExp);
+      return srv.count;
+    },
+    heatStyle(count){
+      if (!count) return { background:'#fff' };
+      const i = count / (this.maxLevelCount||1);
+      const r = Math.floor(255 - i*150);
+      return { backgroundColor:`rgb(${r}, ${255-Math.floor(i*120)}, ${r})` };
+    },
+    resetWeights(){
+      this.weights = { totalExp:0.5, topNExp:0.3, avgExp:0.15, count:0.05 };
+      this.recalcAndGroup();
+    },
+    drawBarChart(){
+      const ctx = document.getElementById('barChart').getContext('2d');
+      if (this.chart) this.chart.destroy();
+      const labels = this.serverList.map(s=>s.name);
+      const data = this.serverList.map(s=>s.totalExp);
+      this.chart = new Chart(ctx, {
+        type:'bar',
+        data:{ labels, datasets:[{ label:'總戰力 EXP', data, backgroundColor:'rgba(34,150,243,0.7)' }]},
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{beginAtZero:true} } }
+      });
+    }
+  },
+  mounted(){
+    this.loadJSONFiles();
+    window.addEventListener('resize', ()=>{ if (this.chart) this.chart.resize(); });
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
