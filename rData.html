@@ -1,42 +1,62 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
-  <title>角色經驗值排行榜</title>
-  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f4f4f4;
-      padding: 20px;
-    }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      background: white;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    }
-    th, td {
-      border: 1px solid #ddd;
-      padding: 8px;
-      text-align: center;
-    }
-    th {
-      background-color: #4CAF50;
-      color: white;
-    }
-    tr:nth-child(even) {
-      background-color: #f2f2f2;
-    }
-    tr:hover {
-      background-color: #ddd;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>角色經驗值排行榜 + 戰力分布</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #f4f4f4;
+    padding: 20px;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    background: white;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    margin-bottom: 40px;
+  }
+  th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+  }
+  th {
+    background-color: #4CAF50;
+    color: white;
+  }
+  tr:nth-child(even) {
+    background-color: #f2f2f2;
+  }
+  tr:hover {
+    background-color: #ddd;
+  }
+  canvas {
+    background: white;
+    padding: 10px;
+    box-shadow: 0px 2px 6px rgba(0,0,0,0.1);
+    margin-bottom: 40px;
+  }
+  select {
+    padding: 5px;
+    margin-bottom: 20px;
+  }
+</style>
 </head>
 <body>
 <div id="app">
   <h2>角色經驗值排行榜</h2>
-  <table v-if="sortedData.length > 0">
+
+  <label>選擇伺服器：
+    <select v-model="selectedWorld" @change="updateCharts">
+      <option value="">全部</option>
+      <option v-for="world in worldList" :key="world" :value="world">{{ world }}</option>
+    </select>
+  </label>
+
+  <table v-if="filteredData.length > 0">
     <thead>
       <tr>
         <th>排名</th>
@@ -48,7 +68,7 @@
       </tr>
     </thead>
     <tbody>
-      <tr v-for="(item, index) in sortedData" :key="item.gcid">
+      <tr v-for="(item, index) in filteredData" :key="item.gcid">
         <td>{{ index+1 }}</td>
         <td>{{ item.gc_name }}</td>
         <td>{{ item.gc_level }}</td>
@@ -58,7 +78,16 @@
       </tr>
     </tbody>
   </table>
-  <p v-else>載入中...</p>
+
+  <h2>平均 EXP</h2>
+  <canvas id="expChart"></canvas>
+
+  <h2>平均 Level</h2>
+  <canvas id="levelChart"></canvas>
+
+  <h2>總戰力 EXP</h2>
+  <canvas id="totalExpChart"></canvas>
+
 </div>
 
 <script>
@@ -68,7 +97,7 @@ createApp({
   data() {
     return {
       jsonList: [],
-      // 世界韓中對照表
+      selectedWorld: "",
       worldMap: {
         "키키": "奇奇",
         "레나": "莉娜",
@@ -78,12 +107,21 @@ createApp({
         "아델": "阿戴爾",
         "에다": "艾達",
         "비르바": "維勒巴"
-      }
+      },
+      charts: {}
     };
   },
   computed: {
-    sortedData() {
-      return [...this.jsonList].sort((a, b) => b.gc_exp - a.gc_exp);
+    worldList() {
+      const worlds = this.jsonList.map(item => this.translateWorld(item.world_id));
+      return [...new Set(worlds)].sort();
+    },
+    filteredData() {
+      let data = [...this.jsonList];
+      if (this.selectedWorld) {
+        data = data.filter(item => this.translateWorld(item.world_id) === this.selectedWorld);
+      }
+      return data.sort((a, b) => b.gc_exp - a.gc_exp);
     }
   },
   methods: {
@@ -97,12 +135,12 @@ createApp({
           if (json.ResultData) {
             allData = allData.concat(json.ResultData);
           }
-          console.log(`已載入 d${i}.json，共 ${json.ResultData?.length || 0} 筆`);
         } catch (err) {
           console.error(`載入 d${i}.json 失敗:`, err);
         }
       }
       this.jsonList = allData;
+      this.updateCharts();
     },
     translateWorld(worldStr) {
       for (const key in this.worldMap) {
@@ -111,6 +149,59 @@ createApp({
         }
       }
       return worldStr;
+    },
+    updateCharts() {
+      // 清除舊圖
+      ['expChart', 'levelChart', 'totalExpChart'].forEach(id => {
+        if (this.charts[id]) {
+          this.charts[id].destroy();
+        }
+      });
+
+      // 統計
+      const stats = {};
+      this.filteredData.forEach(item => {
+        const worldName = this.translateWorld(item.world_id);
+        if (!stats[worldName]) {
+          stats[worldName] = { expSum: 0, levelSum: 0, count: 0 };
+        }
+        stats[worldName].expSum += item.gc_exp;
+        stats[worldName].levelSum += item.gc_level;
+        stats[worldName].count += 1;
+      });
+
+      const labels = Object.keys(stats);
+      const avgExp = labels.map(w => Math.round(stats[w].expSum / stats[w].count));
+      const avgLevel = labels.map(w => Math.round(stats[w].levelSum / stats[w].count));
+      const totalExp = labels.map(w => stats[w].expSum);
+
+      // 畫圖
+      this.charts['expChart'] = new Chart(document.getElementById("expChart"), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{ label: '平均 EXP', data: avgExp, backgroundColor: 'rgba(75, 192, 192, 0.6)' }]
+        },
+        options: { responsive: true, plugins: { tooltip: { callbacks: { label: ctx => ctx.raw.toLocaleString() } } } }
+      });
+
+      this.charts['levelChart'] = new Chart(document.getElementById("levelChart"), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{ label: '平均 Level', data: avgLevel, backgroundColor: 'rgba(255, 159, 64, 0.6)' }]
+        },
+        options: { responsive: true }
+      });
+
+      this.charts['totalExpChart'] = new Chart(document.getElementById("totalExpChart"), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{ label: '總戰力 EXP', data: totalExp, backgroundColor: 'rgba(153, 102, 255, 0.6)' }]
+        },
+        options: { responsive: true, plugins: { tooltip: { callbacks: { label: ctx => ctx.raw.toLocaleString() } } }, scales: { y: { beginAtZero: true } } }
+      });
     }
   },
   mounted() {
