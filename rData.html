@@ -2,25 +2,21 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>角色排行榜 + 伺服器戰力排名 + 等級分布</title>
+<title>角色排行榜 + 伺服器戰力排名 + 等級分布總表</title>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
   body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
-  table { border-collapse: collapse; width: 100%; background: white; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
-  th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-  th { background-color: #4CAF50; color: white; }
-  tr:nth-child(even) { background-color: #f2f2f2; }
-  tr:hover { background-color: #ddd; }
-  .chart-container { width: 100%; height: 250px; }
-  .server-grid { display: flex; flex-wrap: wrap; gap: 20px; }
-  .server-section { width: 48%; background: #fff; padding: 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); box-sizing: border-box; }
-  .mini-chart { width: 100%; height: 200px; }
+  table { border-collapse: collapse; background: white; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+  th, td { border: 1px solid #ddd; padding: 5px; text-align: center; }
+  th { background-color: #4CAF50; color: white; position: sticky; top: 0; }
+  tr:nth-child(even) { background-color: #f9f9f9; }
+  .scroll-table { overflow-x: auto; }
 </style>
 </head>
 <body>
 <div id="app">
   
+  <!-- 個人排行榜 -->
   <h2>角色經驗值排行榜</h2>
   <table v-if="sortedData.length">
     <thead>
@@ -45,10 +41,8 @@
     </tbody>
   </table>
 
+  <!-- 伺服器戰力總表 -->
   <h2>伺服器戰力排名（總體EXP）</h2>
-  <div class="chart-container">
-    <canvas id="totalExpChart"></canvas>
-  </div>
   <table v-if="serverStats.length">
     <thead>
       <tr><th>排名</th><th>伺服器</th><th>總戰力 EXP</th><th>玩家數</th></tr>
@@ -63,36 +57,39 @@
     </tbody>
   </table>
 
-  <h2>各伺服器等級分布</h2>
-  <div class="server-grid">
-    <div v-for="srv in serverStats" :key="srv.name" class="server-section">
-      <h3>{{ srv.name }} 等級分布</h3>
-      <div class="mini-chart">
-        <canvas :id="getChartId(srv.name)"></canvas>
-      </div>
-      <table>
-        <thead><tr><th>等級</th><th>人數</th></tr></thead>
-        <tbody>
-          <tr v-for="lvl in srv.levelStats" :key="lvl.level">
-            <td>{{ lvl.level }}</td>
-            <td>{{ lvl.count }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+  <!-- 各伺服器 x 等級 人數總表 -->
+  <h2>伺服器與等級分布總表</h2>
+  <div class="scroll-table">
+    <table v-if="levelTable.length">
+      <thead>
+        <tr>
+          <th>伺服器 \ 等級</th>
+          <th v-for="lvl in allLevels" :key="'head_' + lvl">{{ lvl }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="srv in levelTable" :key="srv.server">
+          <th>{{ srv.server }}</th>
+          <td v-for="lvl in allLevels" :key="srv.server + '_' + lvl">
+            {{ srv.levelCount[lvl] || 0 }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 
 </div>
 
 <script>
-const { createApp, nextTick } = Vue;
+const { createApp } = Vue;
 
 createApp({
   data() {
     return {
       jsonList: [],
       serverStats: [],
-      charts: {}, // 儲存所有 Chart 實例
+      levelTable: [],
+      allLevels: [],
       worldMap: {
         "키키": "奇奇",
         "레나": "莉娜",
@@ -127,13 +124,7 @@ createApp({
       }
       this.jsonList = allData;
       this.calcServerStats();
-      // 確保 DOM 渲染完成後再繪圖
-      nextTick(() => {
-        setTimeout(() => {
-          this.drawTotalExpChart();
-          this.drawServerLevelCharts();
-        }, 200);
-      });
+      this.calcLevelTable();
     },
     translateWorld(worldStr) {
       for (const key in this.worldMap) {
@@ -148,79 +139,43 @@ createApp({
       this.jsonList.forEach(item => {
         const worldName = this.translateWorld(item.world_id);
         if (!stats[worldName]) {
-          stats[worldName] = { totalExp: 0, count: 0, levels: {} };
+          stats[worldName] = { totalExp: 0, count: 0 };
         }
         stats[worldName].totalExp += item.gc_exp;
         stats[worldName].count += 1;
-        if (!stats[worldName].levels[item.gc_level]) {
-          stats[worldName].levels[item.gc_level] = 0;
-        }
-        stats[worldName].levels[item.gc_level] += 1;
       });
       this.serverStats = Object.keys(stats)
         .map(name => ({
           name,
           totalExp: stats[name].totalExp,
-          count: stats[name].count,
-          levelStats: Object.keys(stats[name].levels).map(l => ({
-            level: parseInt(l),
-            count: stats[name].levels[l]
-          })).sort((a, b) => a.level - b.level)
+          count: stats[name].count
         }))
         .sort((a, b) => b.totalExp - a.totalExp);
     },
-    getChartId(name) {
-      return "levelChart_" + name.replace(/[^a-zA-Z0-9]/g, "_");
-    },
-    destroyChart(id) {
-      if (this.charts[id]) {
-        this.charts[id].destroy();
-        delete this.charts[id];
-      }
-    },
-    drawTotalExpChart() {
-      this.destroyChart("totalExpChart");
-      const ctx = document.getElementById("totalExpChart");
-      if (!ctx) return;
-      this.charts["totalExpChart"] = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: this.serverStats.map(s => s.name),
-          datasets: [{
-            label: '總戰力 EXP',
-            data: this.serverStats.map(s => s.totalExp),
-            backgroundColor: 'rgba(75, 192, 192, 0.6)'
-          }]
-        },
-        options: {
-          maintainAspectRatio: false,
-          plugins: { tooltip: { callbacks: { label: ctx => ctx.raw.toLocaleString() } } },
-          scales: { y: { beginAtZero: true } }
+    calcLevelTable() {
+      const levelsSet = new Set();
+      const serverLevelCounts = {};
+
+      this.jsonList.forEach(item => {
+        const server = this.translateWorld(item.world_id);
+        const lvl = item.gc_level;
+        levelsSet.add(lvl);
+
+        if (!serverLevelCounts[server]) {
+          serverLevelCounts[server] = {};
         }
+        if (!serverLevelCounts[server][lvl]) {
+          serverLevelCounts[server][lvl] = 0;
+        }
+        serverLevelCounts[server][lvl] += 1;
       });
-    },
-    drawServerLevelCharts() {
-      this.serverStats.forEach(srv => {
-        const chartId = this.getChartId(srv.name);
-        this.destroyChart(chartId);
-        const ctx = document.getElementById(chartId);
-        if (!ctx) return;
-        this.charts[chartId] = new Chart(ctx, {
-          type: 'bar',
-          data: {
-            labels: srv.levelStats.map(l => l.level),
-            datasets: [{
-              label: '人數',
-              data: srv.levelStats.map(l => l.count),
-              backgroundColor: 'rgba(255, 159, 64, 0.6)'
-            }]
-          },
-          options: {
-            maintainAspectRatio: false,
-            scales: { y: { beginAtZero: true } }
-          }
-        });
-      });
+
+      this.allLevels = Array.from(levelsSet).sort((a, b) => a - b);
+
+      this.levelTable = Object.keys(serverLevelCounts).sort().map(server => ({
+        server,
+        levelCount: serverLevelCounts[server]
+      }));
     }
   },
   mounted() {
