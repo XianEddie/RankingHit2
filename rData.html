@@ -87,20 +87,19 @@ createApp({
     }
   },
   methods: {
-    async loadAPI() {
+    async loadJSONFiles() {
       let allData = [];
-      // 從 WorldGroupID = 0 到 8 依序抓
-      for (let i = 0; i <= 8; i++) {
-        const apiURL = `https://hit2-api.nexon.com/api/Game/GetWorldRankDate_List?strWorldGroupID=${i}&n4PageNo=1&n2PageSize=100&timestamp=${Date.now()}`;
+      for (let i = 1; i <= 8; i++) {
+        const url = `https://xianeddie.github.io/RankingHit2/d${i}.json`;
         try {
-          const res = await fetch(apiURL);
+          const res = await fetch(url);
           const json = await res.json();
           if (json.ResultData) {
             allData = allData.concat(json.ResultData);
           }
-          console.log(`已抓取 WorldGroupID=${i}, 共 ${json.ResultData?.length || 0} 筆資料`);
+          console.log(`已載入 d${i}.json，共 ${json.ResultData?.length || 0} 筆`);
         } catch (err) {
-          console.error(`抓取 WorldGroupID=${i} 失敗:`, err);
+          console.error(`載入 d${i}.json 失敗:`, err);
         }
       }
       this.jsonList = allData;
@@ -115,7 +114,7 @@ createApp({
     }
   },
   mounted() {
-    this.loadAPI();
+    this.loadJSONFiles();
   }
 }).mount("#app");
 </script>
