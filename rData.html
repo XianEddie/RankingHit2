@@ -2,8 +2,9 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>角色排行榜 + 伺服器戰力 + 等級分布矩陣</title>
+<title>等級矩陣 + 排行榜 + 戰力排名</title>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
   body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
   table { border-collapse: collapse; background: white; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 20px; min-width: 300px; }
@@ -11,13 +12,14 @@
   th { background-color: #4CAF50; color: white; position: sticky; top: 0; }
   tr:nth-child(even) { background-color: #f9f9f9; }
   .scroll-table { overflow-x: auto; }
-  .heatmap { background-color: #f0f0f0; }
   .top-grid { display: flex; flex-wrap: wrap; gap: 20px; }
-  .grid-item { flex: 1; min-width: 300px; background: #fff; padding: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+  .grid-left { flex: 0 0 60%; min-width: 300px; background: #fff; padding: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+  .grid-right { flex: 0 0 38%; min-width: 250px; background: #fff; padding: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+  .chart-container { width: 100%; height: 300px; }
   @media (max-width: 768px) {
     body { padding: 10px; }
     th, td { font-size: 12px; padding: 4px; }
-    .grid-item { min-width: 100%; }
+    .grid-left, .grid-right { flex: 0 0 100%; min-width: unset; }
     table { min-width: unset; }
   }
 </style>
@@ -25,10 +27,31 @@
 <body>
 <div id="app">
 
+  <!-- 等級 × 伺服器 分布矩陣表放最上 -->
+  <h2>等級 × 伺服器 人數分布</h2>
+  <div class="scroll-table">
+    <table v-if="levelMatrix.length">
+      <thead>
+        <tr>
+          <th>等級 \ 伺服器</th>
+          <th v-for="srv in serverNames" :key="'srv_' + srv">{{ srv }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="lvl in allLevels" :key="'lvl_' + lvl">
+          <th>Lv{{ lvl }}</th>
+          <td v-for="srv in serverNames" :key="srv + '_' + lvl" :style="heatStyle(levelCounts[srv]?.[lvl] || 0)">
+            {{ levelCounts[srv]?.[lvl] || 0 }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
   <!-- 上方左右兩表 -->
   <div class="top-grid">
     <!-- 左：角色排行榜 -->
-    <div class="grid-item">
+    <div class="grid-left">
       <h2>角色經驗值排行榜</h2>
       <table v-if="sortedData.length">
         <thead>
@@ -54,9 +77,12 @@
       </table>
     </div>
 
-    <!-- 右：伺服器戰力總表 -->
-    <div class="grid-item">
+    <!-- 右：伺服器戰力總表 + 橫條圖 -->
+    <div class="grid-right">
       <h2>伺服器戰力排名（總體EXP）</h2>
+      <div class="chart-container">
+        <canvas id="serverExpChart"></canvas>
+      </div>
       <table v-if="serverStats.length">
         <thead>
           <tr><th>排名</th><th>伺服器</th><th>總戰力 EXP</th><th>玩家數</th></tr>
@@ -71,27 +97,6 @@
         </tbody>
       </table>
     </div>
-  </div>
-
-  <!-- 底部：等級 × 伺服器 分布矩陣 -->
-  <h2>等級 × 伺服器 人數分布</h2>
-  <div class="scroll-table">
-    <table v-if="levelMatrix.length">
-      <thead>
-        <tr>
-          <th>等級 \ 伺服器</th>
-          <th v-for="srv in serverNames" :key="'srv_' + srv">{{ srv }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="lvl in allLevels" :key="'lvl_' + lvl">
-          <th>Lv{{ lvl }}</th>
-          <td v-for="srv in serverNames" :key="srv + '_' + lvl" :style="heatStyle(levelCounts[srv]?.[lvl] || 0)">
-            {{ levelCounts[srv]?.[lvl] || 0 }}
-          </td>
-        </tr>
-      </tbody>
-    </table>
   </div>
 
 </div>
@@ -151,6 +156,9 @@ createApp({
       this.jsonList = allData;
       this.calcServerStats();
       this.calcLevelMatrix();
+      this.$nextTick(() => {
+        this.drawServerExpChart();
+      });
     },
     translateWorld(worldStr) {
       for (const key in this.worldMap) {
@@ -207,8 +215,38 @@ createApp({
     heatStyle(count) {
       if (count === 0) return {};
       const intensity = count / this.maxCount;
-      const colorVal = Math.floor(255 - intensity * 150); 
-      return { backgroundColor: `rgb(${colorVal}, ${255-colorVal/2}, ${colorVal})` };
+      const redVal = Math.floor(255 - intensity * 150);
+      return { backgroundColor: `rgb(${redVal}, ${255-redVal/2}, ${redVal})` };
+    },
+    drawServerExpChart() {
+      const ctx = document.getElementById("serverExpChart");
+      if (!ctx) return;
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: this.serverStats.map(s => s.name),
+          datasets: [{
+            label: '總戰力 EXP',
+            data: this.serverStats.map(s => s.totalExp),
+            backgroundColor: 'rgba(75, 192, 192, 0.6)'
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: ctx => ctx.raw.toLocaleString()
+              }
+            }
+          },
+          scales: {
+            x: { beginAtZero: true }
+          }
+        }
+      });
     }
   },
   mounted() {
