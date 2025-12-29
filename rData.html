@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>角色經驗值排行榜 + 戰力分布</title>
+<title>伺服器戰力排名 + 等級分佈</title>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -39,55 +39,47 @@
     box-shadow: 0px 2px 6px rgba(0,0,0,0.1);
     margin-bottom: 40px;
   }
-  select {
-    padding: 5px;
-    margin-bottom: 20px;
-  }
 </style>
 </head>
 <body>
 <div id="app">
-  <h2>角色經驗值排行榜</h2>
-
-  <label>選擇伺服器：
-    <select v-model="selectedWorld" @change="updateCharts">
-      <option value="">全部</option>
-      <option v-for="world in worldList" :key="world" :value="world">{{ world }}</option>
-    </select>
-  </label>
-
-  <table v-if="filteredData.length > 0">
+  <h2>伺服器戰力排名（總體EXP）</h2>
+  <canvas id="totalExpChart"></canvas>
+  <table v-if="serverStats.length">
     <thead>
       <tr>
         <th>排名</th>
-        <th>角色名稱</th>
-        <th>等級</th>
-        <th>經驗值</th>
-        <th>公會</th>
-        <th>世界</th>
+        <th>伺服器</th>
+        <th>總戰力 EXP</th>
+        <th>玩家數</th>
       </tr>
     </thead>
     <tbody>
-      <tr v-for="(item, index) in filteredData" :key="item.gcid">
-        <td>{{ index+1 }}</td>
-        <td>{{ item.gc_name }}</td>
-        <td>{{ item.gc_level }}</td>
-        <td>{{ item.gc_exp.toLocaleString() }}</td>
-        <td>{{ item.guild_name }}</td>
-        <td>{{ translateWorld(item.world_id) }}</td>
+      <tr v-for="(srv, index) in serverStats" :key="srv.name">
+        <td>{{ index + 1 }}</td>
+        <td>{{ srv.name }}</td>
+        <td>{{ srv.totalExp.toLocaleString() }}</td>
+        <td>{{ srv.count }}</td>
       </tr>
     </tbody>
   </table>
 
-  <h2>平均 EXP</h2>
-  <canvas id="expChart"></canvas>
-
-  <h2>平均 Level</h2>
-  <canvas id="levelChart"></canvas>
-
-  <h2>總戰力 EXP</h2>
-  <canvas id="totalExpChart"></canvas>
-
+  <h2>等級分布</h2>
+  <canvas id="levelDistChart"></canvas>
+  <table v-if="levelStats.length">
+    <thead>
+      <tr>
+        <th>等級</th>
+        <th>人數</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr v-for="lvl in levelStats" :key="lvl.level">
+        <td>{{ lvl.level }}</td>
+        <td>{{ lvl.count }}</td>
+      </tr>
+    </tbody>
+  </table>
 </div>
 
 <script>
@@ -97,7 +89,8 @@ createApp({
   data() {
     return {
       jsonList: [],
-      selectedWorld: "",
+      serverStats: [],
+      levelStats: [],
       worldMap: {
         "키키": "奇奇",
         "레나": "莉娜",
@@ -107,22 +100,8 @@ createApp({
         "아델": "阿戴爾",
         "에다": "艾達",
         "비르바": "維勒巴"
-      },
-      charts: {}
-    };
-  },
-  computed: {
-    worldList() {
-      const worlds = this.jsonList.map(item => this.translateWorld(item.world_id));
-      return [...new Set(worlds)].sort();
-    },
-    filteredData() {
-      let data = [...this.jsonList];
-      if (this.selectedWorld) {
-        data = data.filter(item => this.translateWorld(item.world_id) === this.selectedWorld);
       }
-      return data.sort((a, b) => b.gc_exp - a.gc_exp);
-    }
+    };
   },
   methods: {
     async loadJSONFiles() {
@@ -140,7 +119,9 @@ createApp({
         }
       }
       this.jsonList = allData;
-      this.updateCharts();
+      this.calcServerStats();
+      this.calcLevelStats();
+      this.drawCharts();
     },
     translateWorld(worldStr) {
       for (const key in this.worldMap) {
@@ -150,57 +131,72 @@ createApp({
       }
       return worldStr;
     },
-    updateCharts() {
-      // 清除舊圖
-      ['expChart', 'levelChart', 'totalExpChart'].forEach(id => {
-        if (this.charts[id]) {
-          this.charts[id].destroy();
-        }
-      });
-
-      // 統計
+    calcServerStats() {
       const stats = {};
-      this.filteredData.forEach(item => {
+      this.jsonList.forEach(item => {
         const worldName = this.translateWorld(item.world_id);
         if (!stats[worldName]) {
-          stats[worldName] = { expSum: 0, levelSum: 0, count: 0 };
+          stats[worldName] = { totalExp: 0, count: 0 };
         }
-        stats[worldName].expSum += item.gc_exp;
-        stats[worldName].levelSum += item.gc_level;
+        stats[worldName].totalExp += item.gc_exp;
         stats[worldName].count += 1;
       });
-
-      const labels = Object.keys(stats);
-      const avgExp = labels.map(w => Math.round(stats[w].expSum / stats[w].count));
-      const avgLevel = labels.map(w => Math.round(stats[w].levelSum / stats[w].count));
-      const totalExp = labels.map(w => stats[w].expSum);
-
-      // 畫圖
-      this.charts['expChart'] = new Chart(document.getElementById("expChart"), {
+      this.serverStats = Object.keys(stats)
+        .map(name => ({ name, totalExp: stats[name].totalExp, count: stats[name].count }))
+        .sort((a, b) => b.totalExp - a.totalExp);
+    },
+    calcLevelStats() {
+      const stats = {};
+      this.jsonList.forEach(item => {
+        if (!stats[item.gc_level]) {
+          stats[item.gc_level] = 0;
+        }
+        stats[item.gc_level] += 1;
+      });
+      this.levelStats = Object.keys(stats)
+        .map(level => ({ level: parseInt(level), count: stats[level] }))
+        .sort((a, b) => b.level - a.level);
+    },
+    drawCharts() {
+      // 總戰力 EXP Chart
+      new Chart(document.getElementById("totalExpChart"), {
         type: 'bar',
         data: {
-          labels,
-          datasets: [{ label: '平均 EXP', data: avgExp, backgroundColor: 'rgba(75, 192, 192, 0.6)' }]
+          labels: this.serverStats.map(s => s.name),
+          datasets: [{
+            label: '總戰力 EXP',
+            data: this.serverStats.map(s => s.totalExp),
+            backgroundColor: 'rgba(75, 192, 192, 0.6)'
+          }]
         },
-        options: { responsive: true, plugins: { tooltip: { callbacks: { label: ctx => ctx.raw.toLocaleString() } } } }
+        options: {
+          responsive: true,
+          plugins: {
+            tooltip: { callbacks: { label: ctx => ctx.raw.toLocaleString() } }
+          },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
       });
 
-      this.charts['levelChart'] = new Chart(document.getElementById("levelChart"), {
+      // 等級分布 Chart
+      new Chart(document.getElementById("levelDistChart"), {
         type: 'bar',
         data: {
-          labels,
-          datasets: [{ label: '平均 Level', data: avgLevel, backgroundColor: 'rgba(255, 159, 64, 0.6)' }]
+          labels: this.levelStats.map(l => l.level),
+          datasets: [{
+            label: '人數',
+            data: this.levelStats.map(l => l.count),
+            backgroundColor: 'rgba(255, 159, 64, 0.6)'
+          }]
         },
-        options: { responsive: true }
-      });
-
-      this.charts['totalExpChart'] = new Chart(document.getElementById("totalExpChart"), {
-        type: 'bar',
-        data: {
-          labels,
-          datasets: [{ label: '總戰力 EXP', data: totalExp, backgroundColor: 'rgba(153, 102, 255, 0.6)' }]
-        },
-        options: { responsive: true, plugins: { tooltip: { callbacks: { label: ctx => ctx.raw.toLocaleString() } } }, scales: { y: { beginAtZero: true } } }
+        options: {
+          responsive: true,
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
       });
     }
   },
