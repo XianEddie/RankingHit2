@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>伺服器戰力排名 + 等級分布</title>
+<title>角色排行榜 + 伺服器戰力排名 + 等級分布</title>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -20,6 +20,31 @@
 </head>
 <body>
 <div id="app">
+  
+  <h2>角色經驗值排行榜</h2>
+  <table v-if="sortedData.length">
+    <thead>
+      <tr>
+        <th>排名</th>
+        <th>角色名稱</th>
+        <th>等級</th>
+        <th>經驗值</th>
+        <th>公會</th>
+        <th>世界</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr v-for="(item, index) in sortedData" :key="item.gcid">
+        <td>{{ index+1 }}</td>
+        <td>{{ item.gc_name }}</td>
+        <td>{{ item.gc_level }}</td>
+        <td>{{ item.gc_exp.toLocaleString() }}</td>
+        <td>{{ item.guild_name }}</td>
+        <td>{{ translateWorld(item.world_id) }}</td>
+      </tr>
+    </tbody>
+  </table>
+
   <h2>伺服器戰力排名（總體EXP）</h2>
   <div class="chart-container">
     <canvas id="totalExpChart"></canvas>
@@ -56,6 +81,7 @@
       </table>
     </div>
   </div>
+
 </div>
 
 <script>
@@ -66,7 +92,7 @@ createApp({
     return {
       jsonList: [],
       serverStats: [],
-      charts: {}, // 存所有 Chart.js 實例，避免重複初始化
+      charts: {}, // 儲存所有 Chart 實例
       worldMap: {
         "키키": "奇奇",
         "레나": "莉娜",
@@ -78,6 +104,11 @@ createApp({
         "비르바": "維勒巴"
       }
     };
+  },
+  computed: {
+    sortedData() {
+      return [...this.jsonList].sort((a, b) => b.gc_exp - a.gc_exp);
+    }
   },
   methods: {
     async loadJSONFiles() {
@@ -96,10 +127,12 @@ createApp({
       }
       this.jsonList = allData;
       this.calcServerStats();
-
+      // 確保 DOM 渲染完成後再繪圖
       nextTick(() => {
-        this.drawTotalExpChart();
-        this.drawServerLevelCharts();
+        setTimeout(() => {
+          this.drawTotalExpChart();
+          this.drawServerLevelCharts();
+        }, 200);
       });
     },
     translateWorld(worldStr) {
@@ -147,7 +180,9 @@ createApp({
     },
     drawTotalExpChart() {
       this.destroyChart("totalExpChart");
-      this.charts["totalExpChart"] = new Chart(document.getElementById("totalExpChart"), {
+      const ctx = document.getElementById("totalExpChart");
+      if (!ctx) return;
+      this.charts["totalExpChart"] = new Chart(ctx, {
         type: 'bar',
         data: {
           labels: this.serverStats.map(s => s.name),
@@ -159,9 +194,7 @@ createApp({
         },
         options: {
           maintainAspectRatio: false,
-          plugins: {
-            tooltip: { callbacks: { label: ctx => ctx.raw.toLocaleString() } }
-          },
+          plugins: { tooltip: { callbacks: { label: ctx => ctx.raw.toLocaleString() } } },
           scales: { y: { beginAtZero: true } }
         }
       });
@@ -171,23 +204,22 @@ createApp({
         const chartId = this.getChartId(srv.name);
         this.destroyChart(chartId);
         const ctx = document.getElementById(chartId);
-        if (ctx) {
-          this.charts[chartId] = new Chart(ctx, {
-            type: 'bar',
-            data: {
-              labels: srv.levelStats.map(l => l.level),
-              datasets: [{
-                label: '人數',
-                data: srv.levelStats.map(l => l.count),
-                backgroundColor: 'rgba(255, 159, 64, 0.6)'
-              }]
-            },
-            options: {
-              maintainAspectRatio: false,
-              scales: { y: { beginAtZero: true } }
-            }
-          });
-        }
+        if (!ctx) return;
+        this.charts[chartId] = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: srv.levelStats.map(l => l.level),
+            datasets: [{
+              label: '人數',
+              data: srv.levelStats.map(l => l.count),
+              backgroundColor: 'rgba(255, 159, 64, 0.6)'
+            }]
+          },
+          options: {
+            maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true } }
+          }
+        });
       });
     }
   },
