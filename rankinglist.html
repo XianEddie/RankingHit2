@@ -2,26 +2,75 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>伺服器 / 聯賽戰力查詢</title>
+<title>伺服器 / 聯賽戰力查詢+陣營拖拉</title>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <style>
   body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
-  table { border-collapse: collapse; background: white; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 20px; min-width: 300px; }
+  table { border-collapse: collapse; background: white; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 20px; min-width: 300px;}
   th, td { border: 1px solid #ddd; padding: 6px; text-align: center; font-size: 14px; }
   th { background-color: #4CAF50; color: white; position: sticky; top: 0; }
   tr:nth-child(even) { background-color: #f9f9f9; }
   select { padding: 5px; font-size: 14px; margin-right: 10px;}
+  .flex-row { display:flex; gap:20px; margin-top:20px; flex-wrap:wrap;}
+  .box { background:#fff; border: 1px solid #ccc; padding:10px; min-width:200px; min-height:150px; flex:1;}
+  .srv-item { background:#eee; padding:5px; margin:5px 0; cursor:grab; }
+  .srv-item.dragging { opacity:0.5; }
+  .friend { background-color: #d2f7d2 !important; }
+  .enemy { background-color: #f7d2d2 !important; }
 </style>
 </head>
 <body>
 <div id="app">
-  <label for="srvSelect">選擇伺服器：</label>
+  <label for="srvSelect">選擇伺服器 / 聯賽：</label>
   <select id="srvSelect" v-model="selectedServerOrLeague">
     <option value="">--請選擇--</option>
     <option v-for="srv in serverNames" :key="'srv_' + srv" :value="srv">{{ srv }}</option>
     <option disabled>──────────</option>
     <option v-for="league in leagueNames" :key="'league_' + league" :value="league">{{ league }}（聯賽）</option>
   </select>
+
+  <!-- 拖拉分組區 -->
+  <div v-if="isLeagueSelected" class="flex-row">
+    <!-- 待分配伺服器 -->
+    <div class="box" 
+         @dragover.prevent 
+         @drop="onDropUnassigned">
+      <h3>未分配伺服器</h3>
+      <div v-for="srv in unassignedServers" 
+           :key="srv" 
+           class="srv-item" 
+           draggable="true" 
+           @dragstart="onDragStart(srv, 'unassigned')">
+        {{ srv }}
+      </div>
+    </div>
+    <!-- 友軍 -->
+    <div class="box" 
+         @dragover.prevent 
+         @drop="onDropFriend">
+      <h3>友軍陣營</h3>
+      <div v-for="srv in friendServers" 
+           :key="srv" 
+           class="srv-item friend" 
+           draggable="true" 
+           @dragstart="onDragStart(srv, 'friend')">
+        {{ srv }}
+      </div>
+    </div>
+    <!-- 敵軍 -->
+    <div class="box" 
+         @dragover.prevent 
+         @drop="onDropEnemy">
+      <h3>敵軍陣營</h3>
+      <div v-for="srv in enemyServers" 
+           :key="srv" 
+           class="srv-item enemy" 
+           draggable="true" 
+           @dragstart="onDragStart(srv, 'enemy')">
+        {{ srv }}
+      </div>
+    </div>
+  </div>
 
   <table v-if="filteredRanking.length">
     <thead>
@@ -35,7 +84,8 @@
       </tr>
     </thead>
     <tbody>
-      <tr v-for="(item, index) in filteredRanking" :key="item.gcid">
+      <tr v-for="(item, index) in filteredRanking" :key="item.gcid"
+          :class="rowClass(item)">
         <td>{{ index+1 }}</td>
         <td>{{ item.gc_name }}</td>
         <td>{{ item.gc_level }}</td>
@@ -56,6 +106,8 @@ createApp({
       jsonList: [],
       serverNames: [],
       selectedServerOrLeague: "",
+      draggedSrv: null,
+      draggedFrom: null,
       worldMap: {
         "키키": "奇奇",
         "레나": "莉娜",
@@ -66,56 +118,39 @@ createApp({
         "에다": "艾達",
         "비르바": "維勒巴"
       },
-      // 聯賽分組設定
       leagueGroups: {
         "聯賽3": [
-          "雨果3",
-          "盧卡斯1", "盧卡斯4", "盧卡斯5",
-          "艾達1", "艾達5",
-          "維勒巴3", "維勒巴5"
+          "雨果3","盧卡斯1","盧卡斯4","盧卡斯5","艾達1","艾達5","維勒巴3","維勒巴5"
         ],
-         "聯賽1": [
-          "雨果2",
-          "奇奇1", "莉娜5", "阿妮卡5",
-          "阿戴爾3", "阿妮卡4",
-          "阿妮卡2", "維勒巴4"
-        ],
-         "聯賽2": [
-          "艾達2",
-          "艾達3", "奇奇4", "奇奇5",
-          "阿妮卡1", "阿妮卡3",
-          "奇奇2", "艾達4"
-        ],
-         "聯賽4": [
-          "奇奇3",
-          "阿戴爾5", "阿戴爾2", "盧卡斯3",
-          "盧卡斯2", "維勒巴1",
-          "雨果5", "雨果4"
-        ],
-        "聯賽5": [
-          "阿戴爾1",
-          "莉娜4", "雨果1", "莉娜3",
-          "莉娜2", "維勒巴2",
-          "莉娜1", "阿戴爾4"
-        ]
-        
-      }
+        "聯賽1": ["雨果2","奇奇1","莉娜5","阿妮卡5","阿戴爾3","阿妮卡4","阿妮卡2","維勒巴4"],
+        "聯賽2": ["艾達2","艾達3","奇奇4","奇奇5","阿妮卡1","阿妮卡3","奇奇2","艾達4"],
+        "聯賽4": ["奇奇3","阿戴爾5","阿戴爾2","盧卡斯3","盧卡斯2","維勒巴1","雨果5","雨果4"],
+        "聯賽5": ["阿戴爾1","莉娜4","雨果1","莉娜3","莉娜2","維勒巴2","莉娜1","阿戴爾4"]
+      },
+      friendServers: [],
+      enemyServers: []
     };
   },
   computed: {
     leagueNames() {
       return Object.keys(this.leagueGroups);
     },
+    isLeagueSelected() {
+      return this.leagueGroups[this.selectedServerOrLeague] !== undefined;
+    },
+    unassignedServers() {
+      if (!this.isLeagueSelected) return [];
+      return this.leagueGroups[this.selectedServerOrLeague].filter(
+        srv => !this.friendServers.includes(srv) && !this.enemyServers.includes(srv)
+      );
+    },
     filteredRanking() {
       if (!this.selectedServerOrLeague) return [];
 
       let targets = [];
-
-      if (this.leagueGroups[this.selectedServerOrLeague]) {
-        // 聯賽分組 → 取得該組所有伺服器
+      if (this.isLeagueSelected) {
         targets = this.leagueGroups[this.selectedServerOrLeague];
       } else {
-        // 單一伺服器
         targets = [this.selectedServerOrLeague];
       }
 
@@ -159,6 +194,54 @@ createApp({
         }
       }
       return worldStr;
+    },
+    onDragStart(srv, from) {
+      this.draggedSrv = srv;
+      this.draggedFrom = from;
+    },
+    onDropFriend() {
+      if (this.draggedSrv) {
+        this.removeFromSource(this.draggedSrv, this.draggedFrom);
+        if (!this.friendServers.includes(this.draggedSrv)) {
+          this.friendServers.push(this.draggedSrv);
+        }
+        this.draggedSrv = null;
+      }
+    },
+    onDropEnemy() {
+      if (this.draggedSrv) {
+        this.removeFromSource(this.draggedSrv, this.draggedFrom);
+        if (!this.enemyServers.includes(this.draggedSrv)) {
+          this.enemyServers.push(this.draggedSrv);
+        }
+        this.draggedSrv = null;
+      }
+    },
+    onDropUnassigned() {
+      if (this.draggedSrv) {
+        this.removeFromSource(this.draggedSrv, this.draggedFrom);
+        this.draggedSrv = null;
+      }
+    },
+    removeFromSource(srv, from) {
+      if (from === 'friend') {
+        this.friendServers = this.friendServers.filter(s => s !== srv);
+      } else if (from === 'enemy') {
+        this.enemyServers = this.enemyServers.filter(s => s !== srv);
+      }
+    },
+    rowClass(item) {
+      const srv = this.translateWorld(item.world_id);
+      if (this.friendServers.includes(srv)) return 'friend';
+      if (this.enemyServers.includes(srv)) return 'enemy';
+      return '';
+    }
+  },
+  watch: {
+    selectedServerOrLeague(val) {
+      // 清空陣營設定
+      this.friendServers = [];
+      this.enemyServers = [];
     }
   },
   mounted() {
