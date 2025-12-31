@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>伺服器戰力查詢</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
+  table { border-collapse: collapse; background: white; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 20px; min-width: 300px; }
+  th, td { border: 1px solid #ddd; padding: 6px; text-align: center; font-size: 14px; }
+  th { background-color: #4CAF50; color: white; position: sticky; top: 0; }
+  tr:nth-child(even) { background-color: #f9f9f9; }
+  select { padding: 5px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <h2>伺服器戰力查詢</h2>
+
+  <label for="srvSelect">選擇伺服器：</label>
+  <select id="srvSelect" v-model="selectedServer">
+    <option value="">--請選擇--</option>
+    <option v-for="srv in serverNames" :key="srv" :value="srv">{{ srv }}</option>
+  </select>
+
+  <table v-if="filteredServerRanking.length">
+    <thead>
+      <tr>
+        <th>排名</th>
+        <th>角色名稱</th>
+        <th>等級</th>
+        <th>經驗值</th>
+        <th>公會</th>
+        <th>伺服器</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr v-for="(item, index) in filteredServerRanking" :key="item.gcid">
+        <td>{{ index+1 }}</td>
+        <td>{{ item.gc_name }}</td>
+        <td>{{ item.gc_level }}</td>
+        <td>{{ item.gc_exp.toLocaleString() }}</td>
+        <td>{{ item.guild_name }}</td>
+        <td>{{ translateWorld(item.world_id) }}</td>
+      </tr>
+    </tbody>
+  </table>
+  <p v-else>請選擇伺服器以查看戰力名單。</p>
+</div>
+
+<script>
+const { createApp } = Vue;
+createApp({
+  data() {
+    return {
+      jsonList: [],
+      serverNames: [],
+      selectedServer: "",
+      worldMap: {
+        "키키": "奇奇",
+        "레나": "莉娜",
+        "아니카": "阿妮卡",
+        "루카스": "盧卡斯",
+        "휴고": "雨果",
+        "아델": "阿戴爾",
+        "에다": "艾達",
+        "비르바": "維勒巴"
+      }
+    };
+  },
+  computed: {
+    filteredServerRanking() {
+      if (!this.selectedServer) return [];
+      return this.jsonList
+        .filter(item => this.translateWorld(item.world_id) === this.selectedServer)
+        .sort((a, b) => b.gc_exp - a.gc_exp);
+    }
+  },
+  methods: {
+    async loadJSONFiles() {
+      let allData = [];
+      for (let i = 1; i <= 8; i++) {
+        const url = `https://xianeddie.github.io/RankingHit2/d${i}.json`;
+        try {
+          const res = await fetch(url);
+          const json = await res.json();
+          if (json.ResultData) {
+            allData = allData.concat(json.ResultData);
+          }
+        } catch (err) {
+          console.error(`載入 d${i}.json 失敗:`, err);
+        }
+      }
+      this.jsonList = allData;
+      this.setServerNames();
+    },
+    setServerNames() {
+      const srvSet = new Set();
+      this.jsonList.forEach(item => {
+        srvSet.add(this.translateWorld(item.world_id));
+      });
+      this.serverNames = Array.from(srvSet);
+    },
+    translateWorld(worldStr) {
+      for (const key in this.worldMap) {
+        if (worldStr.startsWith(key)) {
+          return worldStr.replace(key, this.worldMap[key]);
+        }
+      }
+      return worldStr;
+    }
+  },
+  mounted() {
+    this.loadJSONFiles();
+  }
+}).mount("#app");
+</script>
+</body>
+</html>
