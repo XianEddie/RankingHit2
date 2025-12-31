@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>伺服器戰力查詢</title>
+<title>伺服器 / 聯賽戰力查詢</title>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <style>
   body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
@@ -10,20 +10,22 @@
   th, td { border: 1px solid #ddd; padding: 6px; text-align: center; font-size: 14px; }
   th { background-color: #4CAF50; color: white; position: sticky; top: 0; }
   tr:nth-child(even) { background-color: #f9f9f9; }
-  select { padding: 5px; font-size: 14px; }
+  select { padding: 5px; font-size: 14px; margin-right: 10px;}
 </style>
 </head>
 <body>
 <div id="app">
-  <h2>伺服器戰力查詢</h2>
+  <h2>伺服器 / 聯賽戰力查詢</h2>
 
   <label for="srvSelect">選擇伺服器：</label>
-  <select id="srvSelect" v-model="selectedServer">
+  <select id="srvSelect" v-model="selectedServerOrLeague">
     <option value="">--請選擇--</option>
-    <option v-for="srv in serverNames" :key="srv" :value="srv">{{ srv }}</option>
+    <option v-for="srv in serverNames" :key="'srv_' + srv" :value="srv">{{ srv }}</option>
+    <option disabled>──────────</option>
+    <option v-for="league in leagueNames" :key="'league_' + league" :value="league">{{ league }}（聯賽）</option>
   </select>
 
-  <table v-if="filteredServerRanking.length">
+  <table v-if="filteredRanking.length">
     <thead>
       <tr>
         <th>排名</th>
@@ -35,7 +37,7 @@
       </tr>
     </thead>
     <tbody>
-      <tr v-for="(item, index) in filteredServerRanking" :key="item.gcid">
+      <tr v-for="(item, index) in filteredRanking" :key="item.gcid">
         <td>{{ index+1 }}</td>
         <td>{{ item.gc_name }}</td>
         <td>{{ item.gc_level }}</td>
@@ -45,7 +47,7 @@
       </tr>
     </tbody>
   </table>
-  <p v-else>請選擇伺服器以查看戰力名單。</p>
+  <p v-else>請選擇伺服器或聯賽以查看戰力名單。</p>
 </div>
 
 <script>
@@ -55,7 +57,7 @@ createApp({
     return {
       jsonList: [],
       serverNames: [],
-      selectedServer: "",
+      selectedServerOrLeague: "",
       worldMap: {
         "키키": "奇奇",
         "레나": "莉娜",
@@ -65,14 +67,65 @@ createApp({
         "아델": "阿戴爾",
         "에다": "艾達",
         "비르바": "維勒巴"
+      },
+      // 聯賽分組設定
+      leagueGroups: {
+        "聯賽3": [
+          "雨果3",
+          "盧卡斯1", "盧卡斯4", "盧卡斯5",
+          "艾達1", "艾達5",
+          "維勒巴3", "維勒巴5"
+        ],
+         "聯賽1": [
+          "雨果2",
+          "奇奇1", "莉娜5", "阿妮卡5",
+          "阿戴爾3", "阿妮卡4",
+          "阿妮卡2", "維勒巴4"
+        ],
+         "聯賽2": [
+          "艾達2",
+          "艾達3", "奇奇4", "奇奇5",
+          "阿妮卡1", "阿妮卡3",
+          "奇奇2", "艾達4"
+        ],
+         "聯賽4": [
+          "奇奇3",
+          "阿戴爾5", "阿戴爾2", "盧卡斯3",
+          "盧卡斯2", "維勒巴1",
+          "雨果5", "雨果4"
+        ],
+        "聯賽5": [
+          "阿戴爾1",
+          "莉娜4", "雨果1", "莉娜3",
+          "莉娜2", "維勒巴2",
+          "莉娜1", "阿戴爾4"
+        ]
+        
       }
     };
   },
   computed: {
-    filteredServerRanking() {
-      if (!this.selectedServer) return [];
+    leagueNames() {
+      return Object.keys(this.leagueGroups);
+    },
+    filteredRanking() {
+      if (!this.selectedServerOrLeague) return [];
+
+      let targets = [];
+
+      if (this.leagueGroups[this.selectedServerOrLeague]) {
+        // 聯賽分組 → 取得該組所有伺服器
+        targets = this.leagueGroups[this.selectedServerOrLeague];
+      } else {
+        // 單一伺服器
+        targets = [this.selectedServerOrLeague];
+      }
+
       return this.jsonList
-        .filter(item => this.translateWorld(item.world_id) === this.selectedServer)
+        .filter(item => {
+          const translated = this.translateWorld(item.world_id);
+          return targets.includes(translated);
+        })
         .sort((a, b) => b.gc_exp - a.gc_exp);
     }
   },
@@ -99,7 +152,7 @@ createApp({
       this.jsonList.forEach(item => {
         srvSet.add(this.translateWorld(item.world_id));
       });
-      this.serverNames = Array.from(srvSet);
+      this.serverNames = Array.from(srvSet).sort();
     },
     translateWorld(worldStr) {
       for (const key in this.worldMap) {
