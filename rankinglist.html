@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>伺服器 / 聯賽戰力查詢+陣營拖拉（手機支援+統計）</title>
+<title>伺服器 / 聯賽戰力查詢</title>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <script src="https://unpkg.com/sortablejs@1.15.0/Sortable.min.js"></script>
 <script src="https://unpkg.com/vuedraggable@next/dist/vuedraggable.umd.min.js"></script>
@@ -13,11 +13,12 @@
   button.mode-btn { background-color: #007bff; margin-left: 10px;}
   button:hover { opacity: 0.9; }
   .flex-row { display:flex; gap:20px; margin-top:20px; flex-wrap:wrap;}
-  .box { background:#fff; border: 1px solid #ddd; padding:10px; min-width:200px; flex:1; box-shadow: 0 2px 6px rgba(0,0,0,0.1); border-radius: 5px;}
+  .box { background:#fff; border: 1px solid #ddd; padding:10px; min-width:200px; min-height:180px; flex:1; box-shadow: 0 2px 6px rgba(0,0,0,0.1); border-radius: 5px; display:flex; flex-direction:column; }
   .box h3 { margin-top:0; padding:5px; border-bottom: 1px solid #eee; font-size:16px; }
   .srv-item { background:#eee; padding:10px; margin:6px 0; cursor:grab; border-radius: 4px; font-weight:bold; text-align:center;}
   .srv-item.friend { background-color: #d2f7d2 !important; }
   .srv-item.enemy { background-color: #f7d2d2 !important; }
+  .draggable-placeholder { background: rgba(0,0,0,0.05); border: 2px dashed #bbb; min-height: 40px; width: 100%; margin: 4px 0; border-radius: 4px; }
   table { border-collapse: collapse; background: white; box-shadow: 0 2px 6px rgba(0,0,0,0.05); margin-top: 20px; min-width: 300px; border-radius: 5px; overflow:hidden;}
   th, td { border: 1px solid #ddd; padding: 6px; text-align: center; font-size: 14px; }
   th { background-color: #343a40; color: white; }
@@ -45,7 +46,7 @@
   <div v-if="isLeagueSelected" class="flex-row">
     <div class="box">
       <h3>未分配伺服器</h3>
-      <draggable v-model="unassignedServers" group="servers" item-key="srv" :animation="150">
+      <draggable v-model="unassignedServers" group="servers" item-key="srv" :animation="150" ghost-class="draggable-placeholder" style="flex-grow:1;">
         <template #item="{ element }">
           <div class="srv-item">{{ element }}</div>
         </template>
@@ -53,7 +54,7 @@
     </div>
     <div class="box">
       <h3 style="color:green;">友軍陣營（總戰力：{{ totalExp(friendServers).toLocaleString() }})</h3>
-      <draggable v-model="friendServers" group="servers" item-key="srv" :animation="150">
+      <draggable v-model="friendServers" group="servers" item-key="srv" :animation="150" ghost-class="draggable-placeholder" style="flex-grow:1;">
         <template #item="{ element }">
           <div class="srv-item friend">{{ element }}</div>
         </template>
@@ -61,7 +62,7 @@
     </div>
     <div class="box">
       <h3 style="color:red;">敵軍陣營（總戰力：{{ totalExp(enemyServers).toLocaleString() }})</h3>
-      <draggable v-model="enemyServers" group="servers" item-key="srv" :animation="150">
+      <draggable v-model="enemyServers" group="servers" item-key="srv" :animation="150" ghost-class="draggable-placeholder" style="flex-grow:1;">
         <template #item="{ element }">
           <div class="srv-item enemy">{{ element }}</div>
         </template>
@@ -155,7 +156,6 @@
         </table>
       </div>
     </div>
-
   </div>
   <p v-else>請選擇伺服器或聯賽以查看戰力名單。</p>
 </div>
