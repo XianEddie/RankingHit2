@@ -2,8 +2,10 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>伺服器 / 聯賽戰力查詢+陣營拖拉</title>
+<title>伺服器 / 聯賽</title>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/sortablejs@1.15.0/Sortable.min.js"></script>
+<script src="https://unpkg.com/vuedraggable@next/dist/vuedraggable.umd.min.js"></script>
 <style>
   body { font-family: Arial, sans-serif; background: #f8f9fa; padding: 20px; }
   select, button { padding: 8px; font-size: 14px; border-radius: 5px; border: 1px solid #ccc; }
@@ -39,25 +41,31 @@
     <button class="mode-btn" @click="toggleMode">顯示模式：{{ displayMode === 'single' ? '一起顯示' : '分開顯示' }}</button>
   </div>
 
-  <!-- 拖拉分組區 -->
+  <!-- 拖拉分組區 (支援手機拖拉/滑鼠拖拉) -->
   <div v-if="isLeagueSelected" class="flex-row">
-    <div class="box" @dragover.prevent @drop="onDropUnassigned">
+    <div class="box">
       <h3>未分配伺服器</h3>
-      <div v-for="srv in unassignedServers" :key="srv" class="srv-item" draggable="true" @dragstart="onDragStart(srv, 'unassigned')">
-        {{ srv }}
-      </div>
+      <draggable v-model="unassignedServers" group="servers" item-key="srv" :animation="150">
+        <template #item="{ element }">
+          <div class="srv-item">{{ element }}</div>
+        </template>
+      </draggable>
     </div>
-    <div class="box" @dragover.prevent @drop="onDropFriend">
+    <div class="box">
       <h3 style="color:green;">友軍陣營（總戰力：{{ totalExp(friendServers).toLocaleString() }})</h3>
-      <div v-for="srv in friendServers" :key="srv" class="srv-item friend" draggable="true" @dragstart="onDragStart(srv, 'friend')">
-        {{ srv }}
-      </div>
+      <draggable v-model="friendServers" group="servers" item-key="srv" :animation="150">
+        <template #item="{ element }">
+          <div class="srv-item friend">{{ element }}</div>
+        </template>
+      </draggable>
     </div>
-    <div class="box" @dragover.prevent @drop="onDropEnemy">
+    <div class="box">
       <h3 style="color:red;">敵軍陣營（總戰力：{{ totalExp(enemyServers).toLocaleString() }})</h3>
-      <div v-for="srv in enemyServers" :key="srv" class="srv-item enemy" draggable="true" @dragstart="onDragStart(srv, 'enemy')">
-        {{ srv }}
-      </div>
+      <draggable v-model="enemyServers" group="servers" item-key="srv" :animation="150">
+        <template #item="{ element }">
+          <div class="srv-item enemy">{{ element }}</div>
+        </template>
+      </draggable>
     </div>
   </div>
 
@@ -131,15 +139,16 @@
 
 <script>
 const { createApp } = Vue;
-createApp({
+const app = createApp({
+  components: {
+    draggable: vuedraggable
+  },
   data() {
     return {
       jsonList: [],
       serverNames: [],
       selectedServerOrLeague: "",
-      draggedSrv: null,
-      draggedFrom: null,
-      displayMode: "single", // "single" 或 "split"
+      displayMode: "single",
       worldMap: {
         "키키": "奇奇",
         "레나": "莉娜",
@@ -158,7 +167,8 @@ createApp({
         "聯賽5": ["阿戴爾1","莉娜4","雨果1","莉娜3","莉娜2","維勒巴2","莉娜1","阿戴爾4"]
       },
       friendServers: [],
-      enemyServers: []
+      enemyServers: [],
+      unassignedServers: []
     };
   },
   computed: {
@@ -167,12 +177,6 @@ createApp({
     },
     isLeagueSelected() {
       return this.leagueGroups[this.selectedServerOrLeague] !== undefined;
-    },
-    unassignedServers() {
-      if (!this.isLeagueSelected) return [];
-      return this.leagueGroups[this.selectedServerOrLeague].filter(
-        srv => !this.friendServers.includes(srv) && !this.enemyServers.includes(srv)
-      );
     },
     filteredRanking() {
       if (!this.selectedServerOrLeague) return [];
@@ -217,61 +221,33 @@ createApp({
       }
       return worldStr;
     },
-    onDragStart(srv, from) {
-      this.draggedSrv = srv;
-      this.draggedFrom = from;
-    },
-    onDropFriend() {
-      if (this.draggedSrv) {
-        this.removeFromSource(this.draggedSrv, this.draggedFrom);
-        if (!this.friendServers.includes(this.draggedSrv)) this.friendServers.push(this.draggedSrv);
-        this.draggedSrv = null;
-      }
-    },
-    onDropEnemy() {
-      if (this.draggedSrv) {
-        this.removeFromSource(this.draggedSrv, this.draggedFrom);
-        if (!this.enemyServers.includes(this.draggedSrv)) this.enemyServers.push(this.draggedSrv);
-        this.draggedSrv = null;
-      }
-    },
-    onDropUnassigned() {
-      if (this.draggedSrv) {
-        this.removeFromSource(this.draggedSrv, this.draggedFrom);
-        this.draggedSrv = null;
-      }
-    },
-    removeFromSource(srv, from) {
-      if (from === 'friend') this.friendServers = this.friendServers.filter(s => s !== srv);
-      else if (from === 'enemy') this.enemyServers = this.enemyServers.filter(s => s !== srv);
-    },
-    rowClass(item) {
-      const srv = this.translateWorld(item.world_id);
-      if (this.friendServers.includes(srv)) return 'friend';
-      if (this.enemyServers.includes(srv)) return 'enemy';
-      return '';
-    },
     toggleMode() {
       this.displayMode = this.displayMode === 'single' ? 'split' : 'single';
     },
     totalExp(serverList) {
-      let total = 0;
-      serverList.forEach(srv => {
-        total += this.jsonList.filter(item => this.translateWorld(item.world_id) === srv).reduce((acc, cur) => acc + cur.gc_exp, 0);
-      });
-      return total;
+      return serverList.reduce((total, srv) => {
+        return total + this.jsonList
+          .filter(item => this.translateWorld(item.world_id) === srv)
+          .reduce((acc, cur) => acc + cur.gc_exp, 0);
+      }, 0);
     }
   },
   watch: {
-    selectedServerOrLeague() {
+    selectedServerOrLeague(val) {
       this.friendServers = [];
       this.enemyServers = [];
+      if (this.isLeagueSelected) {
+        this.unassignedServers = [...this.leagueGroups[val]];
+      } else {
+        this.unassignedServers = [];
+      }
     }
   },
   mounted() {
     this.loadJSONFiles();
   }
-}).mount("#app");
+});
+app.mount("#app");
 </script>
 </body>
 </html>
