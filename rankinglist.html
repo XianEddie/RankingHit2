@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>伺服器 / 聯賽戰力查詢+陣營拖拉（手機支援）</title>
+<title>伺服器 / 聯賽戰力查詢</title>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <script src="https://unpkg.com/sortablejs@1.15.0/Sortable.min.js"></script>
 <script src="https://unpkg.com/vuedraggable@next/dist/vuedraggable.umd.min.js"></script>
@@ -41,7 +41,7 @@
     <button class="mode-btn" @click="toggleMode">顯示模式：{{ displayMode === 'single' ? '一起顯示' : '分開顯示' }}</button>
   </div>
 
-  <!-- 拖拉分組區 (支援手機拖拉/滑鼠拖拉) -->
+  <!-- 拖拉分組區 -->
   <div v-if="isLeagueSelected" class="flex-row">
     <div class="box">
       <h3>未分配伺服器</h3>
@@ -72,7 +72,6 @@
   <!-- 顯示模式 -->
   <div v-if="filteredRanking.length">
     <template v-if="displayMode === 'single'">
-      <!-- 一起顯示 -->
       <table>
         <thead>
           <tr>
@@ -97,7 +96,6 @@
       </table>
     </template>
     <template v-else>
-      <!-- 分開顯示 -->
       <div class="flex-row">
         <div style="flex:1;">
           <h3 style="color:green;">友軍排行榜</h3>
@@ -139,10 +137,8 @@
 
 <script>
 const { createApp } = Vue;
-const app = createApp({
-  components: {
-    draggable: vuedraggable
-  },
+createApp({
+  components: { draggable: vuedraggable },
   data() {
     return {
       jsonList: [],
@@ -172,35 +168,31 @@ const app = createApp({
     };
   },
   computed: {
-    leagueNames() {
-      return Object.keys(this.leagueGroups);
-    },
-    isLeagueSelected() {
-      return this.leagueGroups[this.selectedServerOrLeague] !== undefined;
-    },
+    leagueNames() { return Object.keys(this.leagueGroups); },
+    isLeagueSelected() { return this.leagueGroups[this.selectedServerOrLeague] !== undefined; },
     filteredRanking() {
       if (!this.selectedServerOrLeague) return [];
       let targets = this.isLeagueSelected ? this.leagueGroups[this.selectedServerOrLeague] : [this.selectedServerOrLeague];
-      return this.jsonList.filter(item => targets.includes(this.translateWorld(item.world_id))).sort((a,b) => b.gc_exp - a.gc_exp);
+      return this.jsonList.filter(item => targets.includes(this.translateWorld(item.world_id)))
+                          .sort((a,b) => b.gc_exp - a.gc_exp);
     },
     friendRanking() {
-      return this.jsonList.filter(item => this.friendServers.includes(this.translateWorld(item.world_id))).sort((a,b) => b.gc_exp - a.gc_exp);
+      return this.jsonList.filter(item => this.friendServers.includes(this.translateWorld(item.world_id)))
+                          .sort((a,b) => b.gc_exp - a.gc_exp);
     },
     enemyRanking() {
-      return this.jsonList.filter(item => this.enemyServers.includes(this.translateWorld(item.world_id))).sort((a,b) => b.gc_exp - a.gc_exp);
+      return this.jsonList.filter(item => this.enemyServers.includes(this.translateWorld(item.world_id)))
+                          .sort((a,b) => b.gc_exp - a.gc_exp);
     }
   },
   methods: {
     async loadJSONFiles() {
       let allData = [];
       for (let i = 1; i <= 8; i++) {
-        const url = `https://xianeddie.github.io/RankingHit2/d${i}.json`;
         try {
-          const res = await fetch(url);
+          const res = await fetch(`https://xianeddie.github.io/RankingHit2/d${i}.json`);
           const json = await res.json();
-          if (json.ResultData) {
-            allData = allData.concat(json.ResultData);
-          }
+          if (json.ResultData) allData = allData.concat(json.ResultData);
         } catch (err) {
           console.error(`載入 d${i}.json 失敗:`, err);
         }
@@ -230,6 +222,13 @@ const app = createApp({
           .filter(item => this.translateWorld(item.world_id) === srv)
           .reduce((acc, cur) => acc + cur.gc_exp, 0);
       }, 0);
+    },
+    // 這是缺失的 rowClass 方法，補上
+    rowClass(item) {
+      const srv = this.translateWorld(item.world_id);
+      if (this.friendServers.includes(srv)) return 'friend';
+      if (this.enemyServers.includes(srv)) return 'enemy';
+      return '';
     }
   },
   watch: {
@@ -246,8 +245,7 @@ const app = createApp({
   mounted() {
     this.loadJSONFiles();
   }
-});
-app.mount("#app");
+}).mount("#app");
 </script>
 </body>
 </html>
