@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>世界名稱分區（固定 JSON 路徑、美化版）</title>
+<style>
+    body {
+        font-family: "Microsoft JhengHei", Arial, sans-serif;
+        margin: 20px;
+        background-color: #f7f9fc;
+        color: #333;
+    }
+    h1 {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    h2 {
+        margin-top: 30px;
+        background: linear-gradient(90deg, #4a90e2, #007aff);
+        color: white;
+        padding: 8px 15px;
+        border-radius: 6px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    h3 {
+        text-align: center;
+        background-color: #e9f1fc;
+        padding: 6px;
+        border-radius: 6px 6px 0 0;
+        margin: 0;
+        font-size: 16px;
+        color: #0563af;
+    }
+    .tables-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        margin-top: 15px;
+    }
+    .table-box {
+        flex: 1;
+        max-width: 380px;
+        background-color: white;
+        border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+    table {
+        border-collapse: collapse;
+        width: 100%;
+    }
+    th, td {
+        padding: 8px;
+        text-align: center;
+        border-bottom: 1px solid #eaeaea;
+    }
+    th {
+        background-color: #f0f4f8;
+        font-weight: bold;
+    }
+    tr:hover {
+        background-color: #f9fbfd;
+    }
+</style>
+</head>
+<body>
+
+
+
+<div id="tablesContainer"></div>
+
+<script>
+// 直接在這裡寫死 JSON 檔案路徑（注意：必須是在 web server 上可存取）
+const jsonFiles = [
+    "https://xianeddie.github.io/RankingHit2/0202world1.json",
+    "https://xianeddie.github.io/RankingHit2/0202world2.json",
+    "https://xianeddie.github.io/RankingHit2/0202world3.json",
+    "https://xianeddie.github.io/RankingHit2/0202world4.json",
+    "https://xianeddie.github.io/RankingHit2/0202world5.json",
+    "https://xianeddie.github.io/RankingHit2/0202world6.json",
+    "https://xianeddie.github.io/RankingHit2/0202world7.json",
+    "https://xianeddie.github.io/RankingHit2/0202world8.json",
+    "https://xianeddie.github.io/RankingHit2/0202world9.json",
+];
+
+async function loadJSONFiles() {
+    let allData = [];
+    for (let path of jsonFiles) {
+        try {
+            const res = await fetch(path);
+            if (!res.ok) {
+                console.error(`讀取失敗: ${path}`);
+                continue;
+            }
+            const json = await res.json();
+            if (json.ResultData && Array.isArray(json.ResultData)) {
+                allData = allData.concat(json.ResultData);
+            } else {
+                console.warn(`${path} 缺少 ResultData 陣列`);
+            }
+        } catch (err) {
+            console.error(`讀取錯誤: ${path}`, err);
+        }
+    }
+    displayGroupedTables(allData);
+}
+
+function getWorldPrefix(worldName) {
+    if (!worldName) return "未知世界";
+    return worldName.replace(/\d+$/, '').trim();
+}
+
+function displayGroupedTables(data) {
+    const bigGroups = {};
+
+    data.forEach(item => {
+        const worldName = item.world_name || `world_${item.world_id}` || "未知世界";
+        const prefix = getWorldPrefix(worldName);
+
+        if (!bigGroups[prefix]) bigGroups[prefix] = {};
+        if (!bigGroups[prefix][worldName]) bigGroups[prefix][worldName] = [];
+        bigGroups[prefix][worldName].push(item);
+    });
+
+    Object.keys(bigGroups).forEach(prefix => {
+        Object.keys(bigGroups[prefix]).forEach(world => {
+            bigGroups[prefix][world].sort((a, b) => b.gc_level - a.gc_level);
+        });
+    });
+
+    const container = document.getElementById('tablesContainer');
+    container.innerHTML = '';
+
+    Object.keys(bigGroups).sort().forEach(prefix => {
+        const areaTitle = document.createElement('h2');
+        areaTitle.textContent = `區域: ${prefix}`;
+        container.appendChild(areaTitle);
+
+        const rowDiv = document.createElement('div');
+        rowDiv.className = 'tables-row';
+
+        Object.keys(bigGroups[prefix]).sort().forEach(world => {
+            const tableBox = document.createElement('div');
+            tableBox.className = 'table-box';
+
+            const title = `<h3>${world}</h3>`;
+            let html = `<table>
+                <thead>
+                    <tr>
+                        <th>gc_name</th>
+                        <th>gc_level</th>
+                        <th>guild_name</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+            bigGroups[prefix][world].forEach(item => {
+                html += `<tr>
+                            <td>${item.gc_name}</td>
+                            <td>${item.gc_level}</td>
+                            <td>${item.guild_name}</td>
+                        </tr>`;
+            });
+            html += `</tbody></table>`;
+            tableBox.innerHTML = title + html;
+            rowDiv.appendChild(tableBox);
+        });
+
+        container.appendChild(rowDiv);
+    });
+}
+
+// 載入資料
+loadJSONFiles();
+</script>
+
+</body>
+</html>
